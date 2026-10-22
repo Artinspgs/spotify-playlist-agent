@@ -16,7 +16,7 @@
   // Gêneros sugeridos (o usuário também pode digitar qualquer outro).
   const GENRES = [
     'pop', 'rock', 'hip hop', 'rap', 'trap', 'r&b', 'sertanejo', 'mpb', 'pagode',
-    'samba', 'forro', 'funk', 'bossa nova', 'axe', 'gospel', 'eletronica', 'house',
+    'samba', 'forro', 'funk', 'bossa nova', 'axe', 'gospel', 'electronic', 'house',
     'techno', 'edm', 'indie', 'alternative', 'metal', 'punk', 'jazz', 'blues',
     'classical', 'reggae', 'country', 'latin', 'k-pop', 'lo-fi', 'soul', 'disco',
   ];

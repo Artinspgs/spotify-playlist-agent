@@ -37,6 +37,15 @@
   <main id="viewFilters" class="view" hidden>
     <p id="hello" class="hello"></p>
 
+    <section class="card" id="nlCard">
+      <h3>Descreva sua playlist</h3>
+      <label for="nlText" class="sr">Pedido em linguagem natural</label>
+      <textarea id="nlText" rows="2" maxlength="200" enterkeyhint="go"
+        placeholder="Ex.: Rock para correr, anos 2000, sem músicas ao vivo"></textarea>
+      <button id="btnInterpret" class="primary big">Interpretar pedido</button>
+      <p id="nlResult" class="nl-result" hidden></p>
+    </section>
+
     <section class="card">
       <h3>Gêneros</h3>
       <div id="chipsGenres" class="chips"></div>
@@ -138,6 +147,7 @@
 
   <script src="config.js"></script>
   <script src="engine.js"></script>
+  <script src="nlu.js"></script>
   <script src="spotify.js"></script>
   <script src="app.js"></script>
 </body>

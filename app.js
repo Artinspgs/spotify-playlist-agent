@@ -201,11 +201,55 @@
     if (!S.isLoggedIn()) show('viewLogin');
   }
 
+  // ---------- pedido em linguagem natural ----------
+  function showNl(r) {
+    const box = $('nlResult');
+    box.hidden = false; box.textContent = ''; box.className = 'nl-result' + (r.error ? ' err' : '');
+    if (r.error) { box.textContent = r.error; return; }
+    const tag = document.createElement('span');
+    tag.className = 'src' + (r.source === 'ai' ? ' ai' : '');
+    tag.textContent = r.source === 'ai' ? 'IA' : r.source === 'local' ? 'Regras locais' : 'Parcial';
+    box.append(tag, document.createTextNode('Entendi: ' + r.summary + '. Ajuste abaixo se quiser e toque em "Gerar prévia".'));
+    (r.warnings || []).filter(Boolean).forEach((w) => {
+      const s = document.createElement('span'); s.className = 'warn'; s.textContent = w; box.appendChild(s);
+    });
+  }
+
+  function applyInterpreted(found) {
+    const cur = readFilters();
+    // pedido novo: zera os filtros de conteúdo; mantém os ajustes que o pedido não mencionou
+    const base = {
+      genres: [], moods: [], decades: [], includeArtists: [], excludeArtists: [],
+      size: cur.size, maxPerArtist: cur.maxPerArtist, market: cur.market,
+      avoidNoisy: cur.avoidNoisy, noExplicit: cur.noExplicit, isPrivate: cur.isPrivate,
+    };
+    const f = Object.assign(base, found);
+    writeFilters(f);
+    saveFilters(readFilters());
+  }
+
+  async function interpretRequest() {
+    banner('');
+    const btn = $('btnInterpret');
+    btn.disabled = true; btn.textContent = 'Interpretando…';
+    try {
+      const r = await NLU.interpret($('nlText').value, { apiUrl: (window.CONFIG && window.CONFIG.API_URL) || '' });
+      if (!r.error) applyInterpreted(r.filters);
+      showNl(r);
+    } catch (e) {
+      showNl({ error: 'Não consegui interpretar agora. Use os filtros abaixo.' });
+    } finally {
+      btn.disabled = false; btn.textContent = 'Interpretar pedido';
+    }
+  }
+
   // ---------- início ----------
   async function init() {
     $('size').addEventListener('input', () => ($('sizeVal').textContent = $('size').value));
     $('btnAddGenre').addEventListener('click', addCustomGenre);
     $('customGenre').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomGenre(); } });
+    $('btnInterpret').addEventListener('click', interpretRequest);
+    $('nlText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); interpretRequest(); } });
     $('btnGenerate').addEventListener('click', generate);
     $('btnRegen').addEventListener('click', generate);
     $('btnBack').addEventListener('click', () => show('viewFilters'));

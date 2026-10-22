@@ -4,9 +4,21 @@ App web instalável (PWA), em português, que monta playlists a partir de **gên
 
 ## O que ele faz
 
+- **Pedido em linguagem natural** (novo): escreva "Rock para correr, anos 2000, sem músicas ao vivo" e os filtros são preenchidos sozinhos (veja a seção abaixo).
 - Filtros: gêneros (e qualquer gênero digitado), vibe (animado, relaxar, foco, treino, festa, romântico, triste, estrada), décadas (60s–2020s), artistas a incluir/evitar, quantidade (10–100), máximo por artista, país/catálogo, sem explícitas, evitar ao vivo/remix/karaokê, playlist privada ou pública.
 - Mostra uma **prévia** (capas, nomes) onde você remove faixas, renomeia a playlist ou pede "Outra versão".
 - Salva no Spotify e abre a playlist no app.
+
+## Pedido em linguagem natural
+
+Fluxo: **texto → interpretador → validação → filtros do app → (engine, prévia, edição, salvar, como antes)**.
+
+1. **Regras locais (grátis, sem internet):** entendem gêneros, vibes ("correr" → Treino), épocas ("anos 80 e 90", "anos 60 a 80"), quantidade, "sem ao vivo/remix", "sem palavrão", máx. por artista e playlist pública/privada.
+2. **IA (Gemini, só quando precisa):** pedidos com artistas ou termos que as regras não conhecem ("Djavan dos anos 80", "sertanejo universitário"). A chamada passa pela função da Vercel em `vercel-api/` (guia próprio lá) — a chave não fica no app.
+3. **Validação (`nlu.js › sanitize`):** só campos permitidos, valores válidos e limites seguros (10–100 músicas, até 5 gêneros e 5 artistas por lista, textos sem símbolos perigosos). A resposta da IA nunca muda privacidade nem país.
+4. Os filtros aparecem nos chips/campos, você ajusta o que quiser e toca em **Gerar prévia** — o resto do app não mudou.
+
+Sem `API_URL` no `config.js`, tudo continua funcionando só com as regras locais.
 
 ## Limitações do Spotify (importante)
 
@@ -33,7 +45,7 @@ A "vibe" é aproximada por palavras em títulos/álbuns. Funciona bem para clima
 
 ### 2. Testar no computador (opcional)
 ```bash
-node test.js                    # testes da engine
+node test.js && node test-nlu.js   # testes da engine, do interpretador e da função da Vercel
 python3 -m http.server 5500 --bind 127.0.0.1
 # abra http://127.0.0.1:5500/ (registre essa URL no Dashboard)
 ```
@@ -52,10 +64,12 @@ Qualquer hospedagem estática serve: **GitHub Pages**, Netlify, Vercel ou Cloudf
 | `index.html`, `style.css` | Interface mobile |
 | `app.js` | Liga a interface à engine e ao Spotify |
 | `engine.js` | Planeja as buscas e cura o resultado (testável sem rede) |
+| `nlu.js` | Pedido em linguagem natural: regras locais, chamada à IA e validação |
+| `vercel-api/` | Função da Vercel que guarda a chave do Gemini (veja o README dela) |
 | `spotify.js` | Login PKCE e chamadas à Web API (`/search`, `/me/playlists`, `/playlists/{id}/items`) |
-| `config.js` | **Seu Client ID** |
+| `config.js` | **Seu Client ID** e o endereço da função de IA (`API_URL`) |
 | `manifest.webmanifest`, `sw.js`, `icons/` | Instalação como app |
-| `test.js` | Testes da engine |
+| `test.js`, `test-nlu.js` | Testes da engine, do interpretador e da função da Vercel |
 
 ## Problemas comuns
 
@@ -67,7 +81,6 @@ Qualquer hospedagem estática serve: **GitHub Pages**, Netlify, Vercel ou Cloudf
 
 ## Próximos passos possíveis
 
-1. **Pedir em linguagem natural** ("playlist de MPB para jantar, anos 70 e 80") — um agente com Claude traduz o texto nos filtros. Exige um pequeno servidor para não expor a chave da API no celular.
-2. Atualizar uma playlist existente (adicionar mais músicas / trocar faixas).
-3. Salvar "receitas" de filtros favoritas.
-4. Enriquecer com outra fonte de dados (por exemplo, Last.fm para "artistas similares" e tags de humor), já que o Spotify fechou essas informações.
+1. Atualizar uma playlist existente (adicionar mais músicas / trocar faixas).
+2. Salvar "receitas" de filtros favoritas.
+3. Enriquecer com outra fonte de dados (por exemplo, Last.fm para "artistas similares" e tags de humor), já que o Spotify fechou essas informações.
