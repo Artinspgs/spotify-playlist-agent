@@ -14,11 +14,15 @@
 })(typeof self !== 'undefined' ? self : this, function (Engine) {
   'use strict';
 
-  const MAX_TEXT = 200;
+  const MAX_TEXT = 400;
   const DECADE_ORDER = ['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'];
   const MARKETS = ['BR', 'PT', 'US', 'GB', 'MX', 'AR', 'ES', 'DE', 'FR', 'JP'];
   const PER_ARTIST = [1, 2, 3, 5, 10];
-  const LIMITS = { size: [10, 100], genres: 5, artists: 5, seeds: 15 };
+  const LIMITS = { size: [10, 200], genres: 5, artists: 5, seeds: 40 };
+  const LANG_ALIAS = {
+    portugues: 'pt', portuguese: 'pt', ingles: 'en', english: 'en', espanhol: 'es', spanish: 'es', frances: 'fr', french: 'fr',
+    italiano: 'it', italian: 'it', alemao: 'de', german: 'de', japones: 'ja', japanese: 'ja', coreano: 'ko', korean: 'ko',
+  };
 
   const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const cleanStr = (s) =>
@@ -38,7 +42,8 @@
     if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
     return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
   }
-  const KEYS = ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists', 'suggestedArtists', 'size', 'maxPerArtist', 'avoidNoisy', 'noExplicit'];
+  const KEYS = ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists', 'suggestedArtists', 'size', 'maxPerArtist', 'avoidNoisy', 'noExplicit',
+    'languages', 'useMyPlaylists', 'mineShare', 'newShare'];
   function ground(raw, text) {
     const t = fold(text), tw = words(text);
     const nums = (t.match(/\d+/g) || []).map(Number);
@@ -53,6 +58,9 @@
     if (!/ao vivo|live|remix|karaok|acustic|cover/.test(t)) delete out.avoidNoisy;
     if (!/palavr|explicit|crianc|famil|limp|adult|pesad|educad/.test(t)) delete out.noExplicit;
     if (!/\d|decad|recente|atual|nostalg|retro|antig|classic/.test(t)) delete out.decades;
+    if (!/portugu|ingl|english|espanhol|spanish|frances|french|italian|alemao|german|japones|japanese|coreano|korean|brasileir|idioma|lingua/.test(t)) delete out.languages;
+    if (!/minh[ao]s?|meus|biblioteca|favorit|curtid/.test(t)) { delete out.useMyPlaylists; delete out.mineShare; }
+    if (!/nov[oa]s|recente|lancament|novidade|atuais|20(2[4-9])/.test(t)) delete out.newShare;
     return out;
   }
 
@@ -67,7 +75,7 @@
   const GENRE_RE = /^[a-z0-9][a-z0-9 &'\-]{1,29}$/;
   const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} .'&!$+\-\/]{0,59}$/u;
 
-  function asList(v) { return Array.isArray(v) ? v.slice(0, 20) : typeof v === 'string' ? [v] : []; }
+  function asList(v) { return Array.isArray(v) ? v.slice(0, 80) : typeof v === 'string' ? [v] : []; }
 
   function toDecade(n) {
     n = String(n);
@@ -155,6 +163,20 @@
       if (Number.isFinite(n) && n >= 1) f.maxPerArtist = PER_ARTIST.reduce((b, x) => (Math.abs(x - n) < Math.abs(b - n) ? x : b), PER_ARTIST[0]);
     }
 
+    // idiomas (códigos ou nomes conhecidos)
+    const langs = [];
+    asList(raw.languages).forEach((l) => {
+      const k = fold(cleanStr(l)).trim();
+      const code = Engine.LANGS[k] ? k : LANG_ALIAS[k];
+      if (code && !langs.includes(code)) langs.push(code);
+    });
+    if (langs.length) f.languages = langs;
+
+    // mistura: minhas playlists / novas (0-100, de 5 em 5)
+    const pct = (v) => { const n = Math.round(Number(v) / 5) * 5; return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0; };
+    if (raw.useMyPlaylists === true) { f.useMyPlaylists = true; f.mineShare = pct(raw.mineShare) || 40; }
+    if (raw.newShare != null && raw.newShare !== '' && pct(raw.newShare) > 0) f.newShare = pct(raw.newShare);
+
     // booleanos (só true/false de verdade)
     if (typeof raw.avoidNoisy === 'boolean') f.avoidNoisy = raw.avoidNoisy;
     if (typeof raw.noExplicit === 'boolean') f.noExplicit = raw.noExplicit;
@@ -196,7 +218,7 @@
     'quero queria gostaria crie criar cria faca fazer monte montar gere gerar preciso playlist playlists musica musicas faixa faixas som sons ' +
     'tipo estilo bem bom boa boas bons mais so apenas somente tambem favor sem nada nao anos ano mix lista ouvir tocar escutar ai aqui qualquer ' +
     'algumas alguns varias varios ate entre seu sua esse essa esta este isso ser seja tenha tem maximo minimo max min cada ' +
-    'pra mim').split(' '));
+    'pra mim pesquisar pesquise procurar procure buscar busque pegar pegue pega usar use usando deles delas dele dela data datas genero generos pode podem possa').split(' '));
 
   const PRE = '(^|[^a-z0-9])';
   const POST = '(?![a-z0-9])';
@@ -295,9 +317,19 @@
     // épocas
     let decs;
     [t, decs] = extractDecades(t);
-    [t, hit] = take(t, 'recentes?|atuais|atual|nov[oa]s|lancamentos?');
-    if (hit) decs.push('2020s');
     if (decs.length) f.decades = decs;
+
+    // "novas": lançamentos recentes. Misturado ("e novas", "com novas") ou com época => 30%; senão => só novas
+    let mixed = false;
+    [t, hit] = take(t, '(?:(?:e|com|mais|tambem|alem de|misturad[oa]s? com|misturar com|misturando com)\\s+(?:algumas?\\s+|umas?\\s+)?)?(?:musicas\\s+|faixas\\s+)?(?:nov[oa]s|recentes?|atuais|atual|lancamentos?|novidades?)', (m) => {
+      mixed = /(^|[^a-z0-9])(e|com|mais|tambem|alem de|misturad|misturar|misturando)\s/.test(m);
+    });
+    const newHit = hit;
+
+    // suas playlists
+    [t, hit] = take(t, '(?:minhas?|meus?)\\s+(?:proprias?\\s+)?(?:playlists?|musicas?|biblioteca|favorit[ao]s?|curtidas?)');
+    if (hit) { f.useMyPlaylists = true; f.mineShare = 40; }
+    if (newHit) f.newShare = (mixed || decs.length || f.useMyPlaylists) ? 30 : 100;
 
     // quantidade
     [t, hit] = take(t, '(\\d{1,3})\\s*(?:musicas?|faixas?|sons?|cancoes|songs?)', (m) => {
@@ -323,6 +355,13 @@
       if (hit) moods.push(k);
     });
     if (moods.length) f.moods = moods;
+
+    // idiomas (depois dos gêneros, para "rock nacional" não virar idioma)
+    const LANG_RULES = [['pt', 'portugues|portuguesa|brasileir[oa]s?'], ['en', 'ingles|inglesa|english'], ['es', 'espanhol|espanhola|spanish|castelhano'],
+      ['fr', 'frances|francesa|french'], ['it', 'italiano|italiana|italian'], ['de', 'alemao|alema|german'], ['ja', 'japones|japonesa|japanese'], ['ko', 'coreano|coreana|korean']];
+    const langs = [];
+    LANG_RULES.forEach(([code, src]) => { [t, hit] = take(t, src); if (hit) langs.push(code); });
+    if (langs.length) f.languages = langs;
 
     const leftover = t.split(/[^a-z0-9&']+/).filter((w) => w && !STOP.has(w));
     const s = sanitize(f);
@@ -364,7 +403,13 @@
     ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists'].forEach((k) => { if (ai[k] && ai[k].length) out[k] = ai[k]; });
     // números/booleanos: o que as regras pegaram de forma explícita tem prioridade
     ['size', 'maxPerArtist', 'avoidNoisy', 'noExplicit'].forEach((k) => { if (out[k] === undefined && ai[k] !== undefined) out[k] = ai[k]; });
-    return withSeeds(out, ai);
+    return withSeeds(fillMissing(out, ai), ai);
+  }
+
+  // o que as regras não pegaram, a IA pode completar (idiomas, suas playlists, novas)
+  function fillMissing(out, ai) {
+    ['languages', 'useMyPlaylists', 'mineShare', 'newShare'].forEach((k) => { if (out[k] === undefined && ai[k] !== undefined) out[k] = ai[k]; });
+    return out;
   }
 
   function withSeeds(out, ai) {
@@ -381,6 +426,9 @@
     if (f.decades) p.push(f.decades.join(', '));
     if (f.includeArtists) p.push('artistas: ' + f.includeArtists.join(', '));
     if (f.excludeArtists) p.push('evitar: ' + f.excludeArtists.join(', '));
+    if (f.languages) p.push('idiomas: ' + f.languages.map((l) => Engine.LANGS[l] || l).join(', '));
+    if (f.useMyPlaylists) p.push('inclui suas playlists (' + (f.mineShare || 40) + '%)');
+    if (f.newShare) p.push(f.newShare + '% músicas novas');
     if (f.seedArtists) p.push('IA sugeriu ' + f.seedArtists.length + ' artistas');
     if (f.avoidNoisy === true) p.push('sem ao vivo/remix');
     if (f.avoidNoisy === false) p.push('ao vivo permitido');
@@ -406,7 +454,7 @@
       try {
         const ai = await callAI(opts.apiUrl, clean, opts.fetch, opts.timeoutMs);
         // regras locais completas: elas mandam; da IA só vêm os artistas sugeridos
-        const merged = local.complete ? withSeeds(Object.assign({}, local.filters), ai.filters) : merge(local.filters, ai.filters);
+        const merged = local.complete ? withSeeds(fillMissing(Object.assign({}, local.filters), ai.filters), ai.filters) : merge(local.filters, ai.filters);
         if (hasContent(merged)) {
           return { filters: merged, source: local.complete && !merged.seedArtists ? 'local' : 'ai', summary: summarize(merged), warnings: local.warnings.concat(ai.warnings) };
         }

@@ -1,6 +1,6 @@
 // Service worker mínimo: guarda a "casca" do app para abrir rápido/instalar.
 // Nunca intercepta chamadas ao Spotify (outro domínio).
-const CACHE = 'playlist-agent-v4';
+const CACHE = 'playlist-agent-v6';
 const SHELL = ['./', 'index.html', 'style.css', 'config.js', 'engine.js', 'nlu.js', 'spotify.js', 'app.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 

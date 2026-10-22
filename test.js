@@ -151,4 +151,61 @@ test('parseList / buildName / buildDescription', () => {
   assert.ok(E.buildDescription({ genres: ['rock'] }).length <= 300);
 });
 
+test('curate 200: cotas de suas playlists e novas, filtro de alfabeto', () => {
+  const c = [];
+  const mk = (id, name, art, year) => ({ id, uri: 'spotify:track:' + id, name, artists: [{ id: art, name: art }], album: { release_date: year + '-01-01', images: [] }, explicit: false });
+  for (let i = 0; i < 120; i++) c.push({ src: 'mine:Rap', rank: 0, track: mk('m' + i, 'Mine ' + i, 'MA' + (i % 30), 2015) });
+  for (let i = 0; i < 160; i++) c.push({ src: 'seed:X', rank: i, track: mk('n' + i, 'New ' + i, 'NA' + (i % 40), 2026) });
+  for (let i = 0; i < 100; i++) c.push({ src: 'g:pop', rank: i, track: mk('o' + i, 'Other ' + i, 'OA' + (i % 50), 2010) });
+  c.push({ src: 'g:pop', rank: 0, track: mk('jp', '日本語の歌', 'JP', 2020) });
+  const f = { size: 200, languages: ['pt', 'en'], useMyPlaylists: true, mineShare: 40, newShare: 30, recentFrom: 2025, seedArtists: ['X'] };
+  const r = E.curate(c, f, E.mulberry32(3));
+  assert.ok(r.tracks.length >= 150 && r.tracks.length <= 200);
+  assert.ok(!r.tracks.some((t) => t.id === 'jp'));
+  const nm = r.tracks.filter((t) => r.origin.get(t.id) === 'mine').length;
+  assert.ok(nm >= 40, 'minhas: ' + nm);
+  assert.ok(new Set(r.tracks.map((t) => t.id)).size === r.tracks.length);
+});
+
+test('pickPlaylists: só próprias, por nome do gênero', () => {
+  const pl = [
+    { id: '1', name: 'Rap Nacional', owner: { id: 'me' }, items: { total: 30 } },
+    { id: '2', name: 'Outra', owner: { id: 'x' }, items: { total: 99 } },
+    { id: '3', name: 'Vazia', owner: { id: 'me' }, items: { total: 0 } },
+    { id: '4', name: 'Pop 2020', owner: { id: 'me' }, items: { total: 10 } },
+  ];
+  const r = E.pickPlaylists(pl, { meId: 'me', genres: ['rap', 'pop'] });
+  assert.deepStrictEqual(r.chosen.map((p) => p.id).sort(), ['1', '4']);
+  assert.ok(r.byName);
+});
+
+test('curate: excludeIds e mapa de origem (src) por faixa', () => {
+  const mk = (id, art) => ({ id, uri: 'u' + id, name: 'T' + id, artists: [{ id: art, name: art }], album: { release_date: '2020-01-01', images: [] } });
+  const c = [];
+  for (let i = 0; i < 10; i++) c.push({ src: 'seed:A' + (i % 2), rank: i, track: mk('x' + i, 'A' + (i % 2)) });
+  const r = E.curate(c, { size: 8, excludeIds: ['x0', 'x1'], maxPerArtist: 10 }, E.mulberry32(1));
+  assert.ok(!r.tracks.some((t) => t.id === 'x0' || t.id === 'x1'));
+  r.tracks.forEach((t) => assert.ok(/^seed:A[01]$/.test(r.src.get(t.id))));
+});
+
+test('swap: troca por outra da mesma origem, respeitando limites e ids', () => {
+  const mk = (id, art) => ({ id, uri: 'u' + id, name: 'Faixa ' + id, artists: [{ id: art, name: art }], album: { release_date: '2015-01-01', images: [] } });
+  const pool = [];
+  for (let i = 0; i < 6; i++) pool.push({ src: 'seed:Foo', rank: i, track: mk('f' + i, 'Foo') });
+  for (let i = 0; i < 6; i++) pool.push({ src: 'seed:Bar', rank: i, track: mk('b' + i, 'Bar') });
+  const cur = [pool[0].track, pool[1].track, pool[6].track];
+  const r = E.swap(pool, { maxPerArtist: 3 }, cur, pool[0].track, 'seed:Foo', E.mulberry32(2));
+  assert.ok(r && r.track.artists[0].name === 'Foo' && !cur.some((t) => t.id === r.track.id));
+  assert.strictEqual(r.src, 'seed:Foo');
+  // artista no limite (2 de Foo mantendo cap 2) => cai para outra origem
+  const r2 = E.swap(pool, { maxPerArtist: 2 }, cur, pool[6].track, 'seed:Bar', E.mulberry32(2));
+  assert.ok(r2 && r2.track.artists[0].name === 'Bar');
+  // sem candidatos
+  assert.strictEqual(E.swap(pool.slice(0, 2), {}, cur, pool[0].track, 'seed:Foo'), null);
+  // artista evitado nunca volta
+  const r3 = E.swap(pool, { excludeArtists: ['Foo'] }, cur, pool[6].track, 'seed:Bar', E.mulberry32(3));
+  assert.ok(r3 && r3.track.artists[0].name === 'Bar');
+  assert.strictEqual(E.mix([pool[0].track], [pool[6].track, pool[7].track]).length, 3);
+});
+
 console.log('\n' + n + ' testes passaram');

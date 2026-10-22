@@ -21,14 +21,16 @@ test('anos soltos: intervalo, lista, ano único, "novos"', () => {
   assert.deepStrictEqual(N.parseLocal('pop 2005').filters.decades, ['2000s']);
   const r = N.parseLocal('funk 1990-2010 com 40 músicas').filters;
   assert.deepStrictEqual(r.decades, ['90s', '2000s', '2010s']); assert.strictEqual(r.size, 40);
-  assert.deepStrictEqual(N.parseLocal('músicas novas de pop').filters.decades, ['2020s']);
+  // "novas" não é mais uma década: vira uma cota de lançamentos recentes
+  const nv = N.parseLocal('músicas novas de pop').filters;
+  assert.strictEqual(nv.newShare, 100); assert.ok(!nv.decades);
 });
 
 test('erro da IA mostra o motivo (HTTP, timeout, rede) — com e sem filtros parciais', async () => {
   const http = async () => ({ ok: false, status: 502, json: async () => ({ error: 'ai_unavailable', detail: 'timeout' }) });
   let r = await N.interpret('quero ouvir Djavan', { apiUrl: 'x', fetch: http });            // nada entendido localmente => erro
   assert.ok(r.error.includes('HTTP 502') && r.error.includes('timeout'));
-  r = await N.interpret('brasileiro novos 1990 2026', { apiUrl: 'x', fetch: http });         // algo entendido => aviso com o motivo
+  r = await N.interpret('brasileiro novos 1990 2026', { apiUrl: 'x', curate: true, fetch: http });  // algo entendido => aviso com o motivo
   assert.ok(!r.error && r.filters.decades.length === 4 && r.warnings[0].includes('HTTP 502'));
   const net = async () => { throw new TypeError('Failed to fetch'); };
   r = await N.interpret('quero ouvir Djavan', { apiUrl: 'x', fetch: net });
@@ -93,7 +95,7 @@ test('sanitize: descarta campos desconhecidos e valores fora do limite', () => {
   assert.deepStrictEqual(filters.decades, ['80s', '90s', '2000s']);
   assert.deepStrictEqual(filters.includeArtists, ['Djavan', 'Fulano script']); // símbolos perigosos viram espaço
   assert.deepStrictEqual(filters.excludeArtists, ['Beltrano']);
-  assert.strictEqual(filters.size, 100);
+  assert.strictEqual(filters.size, 200);          // 9999 => limite máximo
   assert.strictEqual(filters.maxPerArtist, 3);
   assert.strictEqual(filters.avoidNoisy, undefined);   // string não é booleano
   assert.strictEqual(filters.noExplicit, true);
@@ -197,10 +199,10 @@ test('interpret: IA devolve {} (pedido fora de música) => erro, não filtros va
   assert.ok(r.error);
 });
 
-test('texto é limitado a 200 caracteres', async () => {
+test('texto é limitado a 400 caracteres', async () => {
   const calls = [];
   await N.interpret('quero ouvir ' + 'Fulano '.repeat(100), { apiUrl: 'x', fetch: okFetch({ genres: ['pop'] }, calls) });
-  assert.ok(calls[0].body.text.length <= 200);
+  assert.ok(calls[0].body.text.length <= 400);
 });
 
 test('curadoria: pedido simples + IA => regras locais mandam, IA só acrescenta artistas sugeridos', async () => {
@@ -215,11 +217,11 @@ test('curadoria: pedido simples + IA => regras locais mandam, IA só acrescenta 
   assert.ok(!r.filters.excludeArtists);                          // a IA não pode vetar artista que o usuário não citou
 });
 
-test('curadoria: limite de 15 sugeridos; vetados pelo usuário saem da lista', async () => {
-  const many = Array.from({ length: 30 }, (_, i) => 'Banda ' + String.fromCharCode(65 + (i % 26)) + i);
+test('curadoria: limite de 40 sugeridos; vetados pelo usuário saem da lista', async () => {
+  const many = Array.from({ length: 60 }, (_, i) => 'Banda ' + String.fromCharCode(65 + (i % 26)) + i);
   const ai = { suggestedArtists: many.concat(['Skank']) };
   const r = await N.interpret('rock anos 90 sem Skank', { apiUrl: 'x', curate: true, fetch: okFetch(Object.assign(ai, { excludeArtists: ['Skank'] })) });
-  assert.strictEqual(r.filters.seedArtists.length, 15);
+  assert.strictEqual(r.filters.seedArtists.length, 40);
   assert.ok(!r.filters.seedArtists.includes('Skank'));
 });
 
@@ -239,6 +241,56 @@ test('curadoria: IA fora do ar => segue só com gênero e época e avisa', async
 test('sugeridos só são aceitos vindos da IA (nunca de regras locais)', () => {
   assert.ok(!N.sanitize({ genres: ['rock'], suggestedArtists: ['Skank'] }).filters.seedArtists);
   assert.deepStrictEqual(N.sanitize({ suggestedArtists: ['Skank'] }, { fromAI: true }).filters.seedArtists, ['Skank']);
+});
+
+test('seu pedido de exemplo (200 músicas, pt+en, minhas playlists, novas) é entendido localmente', () => {
+  const r = N.parseLocal('Quero musicas seomente musicas em portugues e ingles, qualquer data, quero uma playlist com 200 musicas, do genero hiphop e rap e pop pode pesquisar as minhas playlist e pegar musicas deles e novas');
+  assert.deepStrictEqual(r.filters, { genres: ['hip hop', 'rap', 'pop'], size: 200, languages: ['pt', 'en'], useMyPlaylists: true, mineShare: 40, newShare: 30 });
+});
+
+test('idiomas: português, inglês, brasileiro; "rock nacional" não vira idioma', () => {
+  assert.deepStrictEqual(N.parseLocal('pop em português e inglês').filters.languages, ['pt', 'en']);
+  assert.deepStrictEqual(N.parseLocal('funk brasileiro').filters.languages, ['pt']);
+  assert.ok(!N.parseLocal('rock nacional anos 80').filters.languages);
+  assert.deepStrictEqual(N.parseLocal('rap japonês e coreano').filters.languages, ['ja', 'ko']);
+});
+
+test('novas: sozinha = só novas (100); misturada = 30; com suas playlists = 30', () => {
+  assert.strictEqual(N.parseLocal('rap só lançamentos').filters.newShare, 100);
+  assert.strictEqual(N.parseLocal('pop e novas').filters.newShare, 30);
+  assert.strictEqual(N.parseLocal('pop com algumas novas').filters.newShare, 30);
+  const f = N.parseLocal('pop com minhas playlists, músicas novas').filters;
+  assert.strictEqual(f.newShare, 30); assert.strictEqual(f.useMyPlaylists, true);
+  assert.ok(!N.parseLocal('crie uma playlist nova de rock').filters.newShare);     // singular não conta
+});
+
+test('"minhas playlists": reconhece variações e usa 40% por padrão', () => {
+  ['usar as minhas playlists', 'pega das minhas músicas', 'da minha biblioteca', 'meus favoritos'].forEach((c) => {
+    const f = N.parseLocal('rock ' + c).filters;
+    assert.strictEqual(f.useMyPlaylists, true, c); assert.strictEqual(f.mineShare, 40, c);
+  });
+});
+
+test('validação dos campos novos: idiomas, porcentagens e ancoragem', async () => {
+  const s = N.sanitize({ languages: ['PT', 'inglês', 'klingon', 'ja'], useMyPlaylists: true, mineShare: 77, newShare: 130 });
+  assert.deepStrictEqual(s.filters.languages, ['pt', 'en', 'ja']);
+  assert.strictEqual(s.filters.mineShare, 75); assert.strictEqual(s.filters.newShare, 100);
+  assert.ok(!N.sanitize({ useMyPlaylists: 'sim' }).filters.useMyPlaylists);                 // só booleano de verdade
+  // a IA não pode ativar o que o pedido não menciona
+  const ai = { genres: ['rock'], languages: ['en'], useMyPlaylists: true, mineShare: 50, newShare: 40 };
+  const r = await N.interpret('rock dos anos 90', { apiUrl: 'x', curate: true, fetch: okFetch(ai) });
+  assert.ok(!r.filters.languages && !r.filters.useMyPlaylists && !r.filters.newShare && !r.filters.mineShare);
+});
+
+test('IA completa o que as regras não pegaram (idioma) quando o pedido menciona', async () => {
+  const ai = { languages: ['en'], suggestedArtists: ['Eminem'] };
+  const r = await N.interpret('quero rap americano em english', { apiUrl: 'x', curate: true, fetch: okFetch(ai) });
+  assert.deepStrictEqual(r.filters.languages, ['en']); assert.deepStrictEqual(r.filters.seedArtists, ['Eminem']);
+});
+
+test('tamanho de até 200 é aceito; acima disso é limitado', () => {
+  assert.strictEqual(N.parseLocal('rap 200 músicas').filters.size, 200);
+  assert.strictEqual(N.sanitize({ size: 250 }).filters.size, 200);
 });
 
 // ---------- função da Vercel ----------
@@ -268,12 +320,12 @@ test('função: chama o Gemini com a chave no header, filtra a resposta e nunca 
   const h = require('./vercel-api/api/interpret.js');
   const seen = [];
   const realFetch = global.fetch;
-  global.fetch = async (url, opts) => { seen.push({ url, opts }); return geminiReply({ genres: ['mpb'], includeArtists: ['Djavan'], decades: ['80s', 'xx'], size: 5000, hack: 'x', isPrivate: false }); };
+  global.fetch = async (url, opts) => { seen.push({ url, opts }); return geminiReply({ genres: ['mpb'], includeArtists: ['Djavan'], decades: ['80s', 'xx'], size: 5000, hack: 'x', isPrivate: false, useMyPlaylists: true }); };
   try {
     const res = mockRes();
     await h({ method: 'POST', headers: { origin: 'https://user.github.io', 'x-forwarded-for': '1.1.1.1' }, body: { text: 'quero Djavan anos 80' } }, res);
     assert.strictEqual(res.code, 200);
-    assert.deepStrictEqual(res.body.filters, { genres: ['mpb'], decades: ['80s'], includeArtists: ['Djavan'], size: 100 });
+    assert.deepStrictEqual(res.body.filters, { genres: ['mpb'], decades: ['80s'], includeArtists: ['Djavan'], size: 200, useMyPlaylists: true });
     assert.ok(!JSON.stringify(res.body).includes('SEGREDO123'));
     assert.strictEqual(seen[0].opts.headers['x-goog-api-key'], 'SEGREDO123');
     assert.ok(!seen[0].url.includes('SEGREDO123'));            // chave nunca na URL
@@ -283,17 +335,39 @@ test('função: chama o Gemini com a chave no header, filtra a resposta e nunca 
   } finally { global.fetch = realFetch; }
 });
 
-test('função: repassa artistas sugeridos (até 15, limpos)', async () => {
+test('função: registro mínimo não guarda o texto nem o IP, e o teto diário bloqueia', async () => {
+  process.env.GEMINI_API_KEY = 'k'; process.env.ALLOWED_ORIGINS = 'https://user.github.io'; process.env.DAILY_LIMIT = '2';
+  delete require.cache[require.resolve('./vercel-api/api/interpret.js')];
+  const h = require('./vercel-api/api/interpret.js');
+  const realFetch = global.fetch, realLog = console.log, lines = [];
+  console.log = (l) => lines.push(String(l));
+  global.fetch = async () => geminiReply({ genres: ['rock'] });
+  try {
+    const codes = [];
+    for (let i = 0; i < 3; i++) {
+      const res = mockRes();
+      await h({ method: 'POST', headers: { origin: 'https://user.github.io', 'x-forwarded-for': '9.9.9.' + i }, body: { text: 'frase secreta de teste ' + i } }, res);
+      codes.push(res.code);
+    }
+    assert.deepStrictEqual(codes, [200, 200, 429]);
+    const all = lines.join('\n');
+    assert.ok(!all.includes('secreta') && !all.includes('9.9.9'));
+    const last = JSON.parse(lines[lines.length - 1]);
+    assert.strictEqual(last.err, 'daily_limit'); assert.strictEqual(last.status, 429); assert.ok(typeof last.ms === 'number');
+  } finally { global.fetch = realFetch; console.log = realLog; delete process.env.DAILY_LIMIT; }
+});
+
+test('função: repassa artistas sugeridos (até 40, limpos)', async () => {
   process.env.GEMINI_API_KEY = 'k'; process.env.ALLOWED_ORIGINS = 'https://user.github.io';
   delete require.cache[require.resolve('./vercel-api/api/interpret.js')];
   const h = require('./vercel-api/api/interpret.js');
   const realFetch = global.fetch;
-  const names = Array.from({ length: 20 }, (_, i) => 'Banda ' + i);
+  const names = Array.from({ length: 60 }, (_, i) => 'Banda ' + i);
   global.fetch = async () => geminiReply({ genres: ['rock'], suggestedArtists: names.concat([42, null]) });
   try {
     const res = mockRes();
     await h({ method: 'POST', headers: { origin: 'https://user.github.io', 'x-forwarded-for': '7.7.7.7' }, body: { text: 'rock anos 2000' } }, res);
-    assert.strictEqual(res.body.filters.suggestedArtists.length, 15);
+    assert.strictEqual(res.body.filters.suggestedArtists.length, 40);
   } finally { global.fetch = realFetch; }
 });
 
@@ -305,7 +379,7 @@ test('função: valida entrada (tipo, tamanho, método) e limita pedidos por IP'
   const mk = (body, ip, method) => ({ method: method || 'POST', headers: { origin: 'https://user.github.io', 'x-forwarded-for': ip }, body });
   try {
     let res = mockRes(); await h(mk({ text: 123 }, '2.2.2.2'), res); assert.strictEqual(res.code, 400);
-    res = mockRes(); await h(mk({ text: 'a'.repeat(201) }, '2.2.2.2'), res); assert.strictEqual(res.code, 400);
+    res = mockRes(); await h(mk({ text: 'a'.repeat(401) }, '2.2.2.2'), res); assert.strictEqual(res.code, 400);
     res = mockRes(); await h(mk({}, '2.2.2.2', 'GET'), res); assert.strictEqual(res.code, 405);
     let last;
     for (let i = 0; i < 25; i++) { last = mockRes(); await h(mk({ text: 'rock' }, '3.3.3.3'), last); }

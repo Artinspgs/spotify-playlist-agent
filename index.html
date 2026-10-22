@@ -26,95 +26,134 @@
   <main id="viewLogin" class="view" hidden>
     <section class="card hero">
       <div class="logo" aria-hidden="true">♪</div>
-      <h2>Crie playlists por filtros</h2>
-      <p>Escolha gênero, vibe, época e artistas. O app monta a playlist e salva direto na sua conta do Spotify.</p>
+      <h2>Descreva e a IA monta</h2>
+      <p>Conte que playlist você quer: estilo, idiomas, quantidade, até a mistura com as suas playlists. O app monta e salva direto na sua conta do Spotify.</p>
       <button id="btnLogin" class="primary big">Conectar ao Spotify</button>
       <p id="setupHint" class="hint" hidden></p>
     </section>
   </main>
 
-  <!-- ===== Tela: filtros ===== -->
+  <!-- ===== Tela: pedido + filtros ===== -->
   <main id="viewFilters" class="view" hidden>
     <p id="hello" class="hello"></p>
 
     <section class="card" id="nlCard">
-      <h3>Descreva sua playlist</h3>
+      <h3>Descreva a playlist que você quer</h3>
+      <div id="presets" class="chips compact" role="group" aria-label="Pedidos prontos"></div>
       <label for="nlText" class="sr">Pedido em linguagem natural</label>
-      <textarea id="nlText" rows="2" maxlength="200" enterkeyhint="go"
-        placeholder="Ex.: Rock para correr, anos 2000, sem músicas ao vivo"></textarea>
-      <label class="switch"><input id="curateAI" type="checkbox" checked><span>Curadoria com IA: sugerir artistas do estilo</span></label>
-      <button id="btnInterpret" class="primary big">Interpretar pedido</button>
+      <textarea id="nlText" rows="4" maxlength="400" enterkeyhint="go"
+        placeholder="Ex.: 150 músicas de rap e pop em português e inglês, misturando as minhas playlists com lançamentos novos"></textarea>
+      <div id="recentsBox" hidden>
+        <p class="mini-label">Recentes <button id="btnClearRecents" class="linklike" type="button">limpar</button></p>
+        <div id="recents" class="chips compact"></div>
+      </div>
+      <button id="btnBuild" class="primary big">Montar playlist</button>
+      <button id="btnReconnect" class="ghost big" hidden>Autorizar acesso às minhas playlists</button>
       <p id="nlResult" class="nl-result" hidden></p>
+      <p class="hint">A IA escolhe artistas, idiomas e a mistura. Você revisa tudo antes de salvar.</p>
+      <p class="hint privacy">Privacidade: só o texto deste pedido é enviado à IA (Google Gemini). Suas playlists e seu perfil do Spotify nunca saem do seu aparelho.</p>
     </section>
 
-    <section class="card">
-      <h3>Gêneros</h3>
-      <div id="chipsGenres" class="chips"></div>
-      <div class="row">
-        <input id="customGenre" type="text" placeholder="Outro gênero (ex.: pop rock)" enterkeyhint="done" autocapitalize="none">
-        <button id="btnAddGenre" class="ghost">Adicionar</button>
-      </div>
-    </section>
+    <details id="advanced" class="adv">
+      <summary>Ajustar filtros manualmente</summary>
 
-    <section class="card">
-      <h3>Vibe</h3>
-      <div id="chipsMoods" class="chips"></div>
-      <p class="hint">A vibe é aproximada por palavras nos títulos e álbuns (o Spotify não libera mais energia/humor da faixa).</p>
-    </section>
-
-    <section class="card">
-      <h3>Época</h3>
-      <div id="chipsDecades" class="chips"></div>
-    </section>
-
-    <section class="card">
-      <h3>Artistas</h3>
-      <label for="inArtists">Incluir <span class="muted">(separe por vírgula)</span></label>
-      <input id="inArtists" type="text" placeholder="Ex.: Djavan, Jorge Ben Jor" autocapitalize="words">
-      <label for="inSeeds">Sugeridos pela IA <span class="muted">(edite ou apague à vontade)</span></label>
-      <input id="inSeeds" type="text" placeholder="Preenchido quando você interpreta um pedido" autocapitalize="words">
-      <label for="exArtists">Evitar</label>
-      <input id="exArtists" type="text" placeholder="Ex.: Fulano, Beltrano" autocapitalize="words">
-    </section>
-
-    <section class="card">
-      <h3>Ajustes</h3>
-      <label for="size">Quantidade de músicas: <b id="sizeVal">30</b></label>
-      <input id="size" type="range" min="10" max="100" step="5" value="30">
-
-      <div class="grid2">
-        <div>
-          <label for="maxPerArtist">Máx. por artista</label>
-          <select id="maxPerArtist">
-            <option value="1">1</option><option value="2" selected>2</option>
-            <option value="3">3</option><option value="5">5</option><option value="10">Sem limite</option>
-          </select>
+      <section class="card">
+        <h3>Gêneros</h3>
+        <div id="chipsGenres" class="chips"></div>
+        <div class="row">
+          <input id="customGenre" type="text" placeholder="Outro gênero (ex.: pop rock)" enterkeyhint="done" autocapitalize="none">
+          <button id="btnAddGenre" class="ghost">Adicionar</button>
         </div>
-        <div>
-          <label for="market">País / catálogo</label>
-          <select id="market">
-            <option value="BR" selected>Brasil</option><option value="PT">Portugal</option>
-            <option value="US">EUA</option><option value="GB">Reino Unido</option>
-            <option value="MX">México</option><option value="AR">Argentina</option>
-            <option value="ES">Espanha</option><option value="DE">Alemanha</option>
-            <option value="FR">França</option><option value="JP">Japão</option>
-          </select>
-        </div>
-      </div>
+      </section>
 
-      <label class="switch"><input id="avoidNoisy" type="checkbox" checked><span>Evitar ao vivo, remix e karaokê</span></label>
-      <label class="switch"><input id="noExplicit" type="checkbox"><span>Sem conteúdo explícito</span></label>
-      <label class="switch"><input id="isPrivate" type="checkbox" checked><span>Playlist privada</span></label>
-    </section>
+      <section class="card">
+        <h3>Idiomas</h3>
+        <div id="chipsLangs" class="chips"></div>
+        <p class="hint">O Spotify não informa o idioma de cada música. O app pede à IA artistas que cantam nesses idiomas e descarta títulos em outros alfabetos.</p>
+      </section>
+
+      <section class="card">
+        <h3>Vibe</h3>
+        <div id="chipsMoods" class="chips"></div>
+        <p class="hint">A vibe é aproximada por palavras nos títulos e álbuns (o Spotify não libera mais energia/humor da faixa).</p>
+      </section>
+
+      <section class="card">
+        <h3>Época</h3>
+        <div id="chipsDecades" class="chips"></div>
+        <p class="hint">Sem nenhuma marcada = qualquer época.</p>
+      </section>
+
+      <section class="card">
+        <h3>Mistura</h3>
+        <label class="switch"><input id="useMine" type="checkbox"><span>Usar músicas das minhas playlists</span></label>
+        <label for="mineShare">Das minhas playlists: <b id="mineVal">40</b>%</label>
+        <input id="mineShare" type="range" min="0" max="100" step="5" value="40">
+        <label for="newShare">Músicas novas (lançamentos recentes): <b id="newVal">0</b>%</label>
+        <input id="newShare" type="range" min="0" max="100" step="5" value="0">
+        <div id="mineBox" hidden>
+          <label>Playlists usadas <span class="muted">(toque para trocar)</span></label>
+          <div id="mineList" class="mine-list"></div>
+        </div>
+        <p class="hint">Só as playlists que você criou ou em que colabora podem ser lidas (regra do Spotify).</p>
+      </section>
+
+      <section class="card">
+        <h3>Artistas</h3>
+        <label for="inArtists">Incluir <span class="muted">(separe por vírgula)</span></label>
+        <input id="inArtists" type="text" placeholder="Ex.: Djavan, Jorge Ben Jor" autocapitalize="words">
+        <label for="inSeeds">Sugeridos pela IA <span class="muted">(edite ou apague à vontade)</span></label>
+        <input id="inSeeds" type="text" placeholder="Preenchido quando você monta um pedido" autocapitalize="words">
+        <label for="exArtists">Evitar</label>
+        <input id="exArtists" type="text" placeholder="Ex.: Fulano, Beltrano" autocapitalize="words">
+      </section>
+
+      <section class="card">
+        <h3>Ajustes</h3>
+        <label for="size">Quantidade de músicas: <b id="sizeVal">30</b></label>
+        <input id="size" type="range" min="10" max="200" step="5" value="30">
+
+        <div class="grid2">
+          <div>
+            <label for="maxPerArtist">Máx. por artista</label>
+            <select id="maxPerArtist">
+              <option value="0" selected>Automático</option><option value="1">1</option><option value="2">2</option>
+              <option value="3">3</option><option value="5">5</option><option value="10">Sem limite</option>
+            </select>
+          </div>
+          <div>
+            <label for="market">País / catálogo</label>
+            <select id="market">
+              <option value="BR" selected>Brasil</option><option value="PT">Portugal</option>
+              <option value="US">EUA</option><option value="GB">Reino Unido</option>
+              <option value="MX">México</option><option value="AR">Argentina</option>
+              <option value="ES">Espanha</option><option value="DE">Alemanha</option>
+              <option value="FR">França</option><option value="JP">Japão</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="switch"><input id="curateAI" type="checkbox" checked><span>Usar IA para sugerir artistas</span></label>
+        <label class="switch"><input id="avoidNoisy" type="checkbox" checked><span>Evitar ao vivo, remix e karaokê</span></label>
+        <label class="switch"><input id="noExplicit" type="checkbox"><span>Sem conteúdo explícito</span></label>
+        <label class="switch"><input id="isPrivate" type="checkbox" checked><span>Playlist privada</span></label>
+        <label class="switch"><input id="avoidHist" type="checkbox" checked><span>Não repetir músicas de playlists que já criei aqui</span></label>
+        <button id="btnClearHist" class="ghost" type="button">Esquecer playlists já criadas</button>
+      </section>
+    </details>
     <div class="spacer"></div>
   </main>
 
   <!-- ===== Tela: prévia ===== -->
   <main id="viewPreview" class="view" hidden>
     <section class="card">
+      <label for="saveTo">Salvar em</label>
+      <select id="saveTo"><option value="new">Nova playlist</option></select>
       <label for="plName">Nome da playlist</label>
       <input id="plName" type="text" maxlength="100">
       <p id="plStats" class="hint"></p>
+      <p id="plNotes" class="hint" hidden></p>
+      <p class="hint">Toque em uma música para manter, trocar, tirar o artista ou remover. "Outra versão" mantém as que você marcou.</p>
     </section>
     <ul id="trackList" class="tracks"></ul>
     <div class="spacer"></div>
@@ -146,6 +185,8 @@
     <div class="spinner" aria-hidden="true"></div>
     <p id="busyText">Buscando músicas…</p>
     <div class="progress"><div id="busyBar"></div></div>
+    <p id="busyEta" class="hint" aria-live="polite"></p>
+    <button id="busyCancel" class="ghost" type="button" hidden>Cancelar</button>
   </div>
 
   <script src="config.js"></script>
