@@ -1,0 +1,7 @@
+{
+  "name": "playlist-agent-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Função serverless que interpreta pedidos em linguagem natural com Gemini, mantendo a chave fora do app.",
+  "engines": { "node": ">=20" }
+}
