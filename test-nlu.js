@@ -179,6 +179,44 @@ test('texto é limitado a 200 caracteres', async () => {
   assert.ok(calls[0].body.text.length <= 200);
 });
 
+test('curadoria: pedido simples + IA => regras locais mandam, IA só acrescenta artistas sugeridos', async () => {
+  const calls = [];
+  const ai = { genres: ['pop'], decades: ['80s'], suggestedArtists: ['Charlie Brown Jr.', 'Skank', 'Skank', 'AC/DC', 'x"; DROP', 'Fulano'], excludeArtists: ['Fulano'] };
+  const r = await N.interpret('Rock para correr, anos 2000', { apiUrl: 'x', curate: true, fetch: okFetch(ai, calls) });
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(r.source, 'ai');
+  assert.deepStrictEqual(r.filters.genres, ['rock']);            // a IA não troca o que as regras entenderam
+  assert.deepStrictEqual(r.filters.decades, ['2000s']);
+  assert.deepStrictEqual(r.filters.seedArtists, ['Charlie Brown Jr.', 'Skank', 'AC/DC', 'Fulano']);   // sem repetidos nem lixo
+  assert.ok(!r.filters.excludeArtists);                          // a IA não pode vetar artista que o usuário não citou
+});
+
+test('curadoria: limite de 15 sugeridos; vetados pelo usuário saem da lista', async () => {
+  const many = Array.from({ length: 30 }, (_, i) => 'Banda ' + String.fromCharCode(65 + (i % 26)) + i);
+  const ai = { suggestedArtists: many.concat(['Skank']) };
+  const r = await N.interpret('rock anos 90 sem Skank', { apiUrl: 'x', curate: true, fetch: okFetch(Object.assign(ai, { excludeArtists: ['Skank'] })) });
+  assert.strictEqual(r.filters.seedArtists.length, 15);
+  assert.ok(!r.filters.seedArtists.includes('Skank'));
+});
+
+test('curadoria: sem a opção ligada, pedido simples não chama a IA', async () => {
+  const calls = [];
+  const r = await N.interpret('Rock para correr, anos 2000', { apiUrl: 'x', curate: false, fetch: okFetch({}, calls) });
+  assert.strictEqual(calls.length, 0); assert.strictEqual(r.source, 'local');
+});
+
+test('curadoria: IA fora do ar => segue só com gênero e época e avisa', async () => {
+  const bad = async () => { throw new Error('rede'); };
+  const r = await N.interpret('Rock para correr, anos 2000', { apiUrl: 'x', curate: true, fetch: bad });
+  assert.strictEqual(r.source, 'local'); assert.deepStrictEqual(r.filters.genres, ['rock']);
+  assert.ok(r.warnings[0].includes('sem artistas sugeridos'));
+});
+
+test('sugeridos só são aceitos vindos da IA (nunca de regras locais)', () => {
+  assert.ok(!N.sanitize({ genres: ['rock'], suggestedArtists: ['Skank'] }).filters.seedArtists);
+  assert.deepStrictEqual(N.sanitize({ suggestedArtists: ['Skank'] }, { fromAI: true }).filters.seedArtists, ['Skank']);
+});
+
 // ---------- função da Vercel ----------
 function mockRes() {
   const r = { code: 200, headers: {}, body: undefined };
@@ -218,6 +256,20 @@ test('função: chama o Gemini com a chave no header, filtra a resposta e nunca 
     const body = JSON.parse(seen[0].opts.body);
     assert.strictEqual(body.generationConfig.temperature, 0);
     assert.ok(body.contents[0].parts[0].text.includes('quero Djavan anos 80'));
+  } finally { global.fetch = realFetch; }
+});
+
+test('função: repassa artistas sugeridos (até 15, limpos)', async () => {
+  process.env.GEMINI_API_KEY = 'k'; process.env.ALLOWED_ORIGINS = 'https://user.github.io';
+  delete require.cache[require.resolve('./vercel-api/api/interpret.js')];
+  const h = require('./vercel-api/api/interpret.js');
+  const realFetch = global.fetch;
+  const names = Array.from({ length: 20 }, (_, i) => 'Banda ' + i);
+  global.fetch = async () => geminiReply({ genres: ['rock'], suggestedArtists: names.concat([42, null]) });
+  try {
+    const res = mockRes();
+    await h({ method: 'POST', headers: { origin: 'https://user.github.io', 'x-forwarded-for': '7.7.7.7' }, body: { text: 'rock anos 2000' } }, res);
+    assert.strictEqual(res.body.filters.suggestedArtists.length, 15);
   } finally { global.fetch = realFetch; }
 });
 

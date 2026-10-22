@@ -82,52 +82,74 @@
     return String(s).replace(/["\\]/g, ' ').trim();
   }
 
+  // "Paralamas do Sucesso" casa com "Os Paralamas do Sucesso" (palavras inteiras, nos dois sentidos).
+  function nameMatches(artistNorm, wantedNorm) {
+    if (!artistNorm || !wantedNorm) return false;
+    if (artistNorm === wantedNorm) return true;
+    const a = ' ' + artistNorm + ' ', w = ' ' + wantedNorm + ' ';
+    return a.includes(w) || w.includes(a);
+  }
+
   // ---------- 1) planejar as buscas ----------
+  // Faixa de anos que cobre as décadas escolhidas, ex.: " year:1990-1999".
+  function yearClause(decadeKeys) {
+    const rs = (decadeKeys || []).map((d) => DECADES[d]).filter(Boolean);
+    if (!rs.length) return '';
+    return ' year:' + Math.min(...rs.map((r) => r[0])) + '-' + Math.max(...rs.map((r) => r[1]));
+  }
+
   function planQueries(f, rng, usedKeys) {
     rng = rng || Math.random;
     usedKeys = usedKeys || new Set();
     const size = f.size || 30;
-    const budget = Math.max(6, Math.min(24, Math.ceil(size / 3) + 2));
-
-    const genres = (f.genres && f.genres.length ? f.genres : [null]).map((g) => g && cleanQueryValue(g));
-    const decades = (f.decades && f.decades.length ? f.decades : [])
-      .map((d) => DECADES[d]).filter(Boolean);
-    const kws = [];
-    (f.moods || []).forEach((m) => MOODS[m] && kws.push(...MOODS[m].keywords));
-
     const plan = [];
+    const push = (q, offset, src) => {
+      const key = q + '|' + offset;
+      if (usedKeys.has(key)) return;
+      usedKeys.add(key);
+      plan.push({ q, offset, src });
+    };
 
-    // Artistas pedidos: 3 páginas cada (30 faixas) — a 1ª página costuma ter os maiores hits.
-    (f.includeArtists || []).forEach((raw) => {
-      const a = cleanQueryValue(raw);
-      if (!a) return;
-      [0, 10, 20].forEach((offset) => {
-        const key = `artist:"${a}"|${offset}`;
-        if (usedKeys.has(key)) return;
-        usedKeys.add(key);
-        plan.push({ q: `artist:"${a}"`, offset, src: 'artist:' + a });
-      });
-    });
+    const genres = (f.genres && f.genres.length ? f.genres : []).map(cleanQueryValue).filter(Boolean);
+    const decKeys = (f.decades || []).filter((d) => DECADES[d]);
+    const yr = yearClause(decKeys);
+    const included = (f.includeArtists || []).map(cleanQueryValue).filter(Boolean);
+    const seeds = (f.seedArtists || []).map(cleanQueryValue).filter(Boolean).slice(0, 24);
 
+    // Artistas pedidos pelo usuário: 3 páginas cada (as primeiras costumam ter os maiores sucessos).
+    included.forEach((a) => [0, 10, 20].forEach((o) => push('artist:"' + a + '"' + yr, o, 'artist:' + a)));
+    // Artistas sugeridos pela IA: só a 1ª página de cada (a mais relevante).
+    seeds.forEach((a) => push('artist:"' + a + '"' + yr, 0, 'seed:' + a));
+
+    // Buscas por gênero/época. Com artistas sugeridos pela IA elas só entram como reforço (2ª rodada).
+    const hasGenreOrDecade = genres.length > 0 || decKeys.length > 0;
+    const artistDriven = included.length > 0 || seeds.length > 0;
+    let budget = Math.max(6, Math.min(24, Math.ceil(size / 3) + 2));
+    if (seeds.length || (artistDriven && !hasGenreOrDecade)) budget = 0;
+
+    // Sem gênero, época nem artistas, a "vibe" vira palavra-chave (último recurso, é imprecisa).
+    const kws = [];
+    if (!hasGenreOrDecade && !artistDriven) (f.moods || []).forEach((m) => MOODS[m] && kws.push(...MOODS[m].keywords));
+
+    const decRanges = decKeys.map((d) => DECADES[d]);
+    const gList = genres.length ? genres : [null];
     let i = 0, guard = 0, made = 0;
     while (made < budget && guard++ < budget * 12) {
-      const g = genres[i % genres.length];
-      const d = decades.length ? decades[Math.floor(i / genres.length) % decades.length] : null;
+      const g = gList[i % gList.length];
+      const d = decRanges.length ? decRanges[Math.floor(i / gList.length) % decRanges.length] : null;
       i++;
       const kw = kws.length ? kws[Math.floor(rng() * kws.length)] : null;
       const parts = [];
       if (kw) parts.push(kw);
-      if (g) parts.push(`genre:"${g}"`);
-      if (d) parts.push(`year:${d[0]}-${d[1]}`);
-      if (!parts.length) parts.push('year:1960-2029');
+      if (g) parts.push('genre:"' + g + '"');
+      if (d) parts.push('year:' + d[0] + '-' + d[1]);
+      if (!parts.length) break;
+      // páginas iniciais são bem mais relevantes: sorteio puxado para offsets baixos (0..90)
+      const offset = Math.floor(rng() * rng() * 10) * 10;
       const q = parts.join(' ');
-      const maxSlot = kw ? 9 : 19; // palavras-chave estreitam o resultado
-      const offset = Math.floor(rng() * (maxSlot + 1)) * 10;
-      const key = `${q}|${offset}`;
-      if (usedKeys.has(key)) continue;
-      usedKeys.add(key);
-      plan.push({ q, offset, src: g ? 'g:' + g : 'g:*' });
-      made++;
+      const before = plan.length;
+      push(q, offset, g ? 'g:' + g : 'g:*');
+      if (plan.length > before) made++;
     }
     return plan;
   }
@@ -138,10 +160,13 @@
     return a.id || norm(a.name);
   }
 
+  const SPREAD = 8; // mistura leve entre as primeiras posições, sem ir buscar o fundo da lista
+
   function curate(cands, f, rng) {
     rng = rng || Math.random;
     const size = f.size || 30;
     const cap = Math.max(1, f.maxPerArtist || 2);
+    const capExplicit = Math.max(cap, 5); // artistas pedidos pelo usuário podem aparecer mais vezes
     const excl = (f.excludeArtists || []).map(norm).filter(Boolean);
     const seenId = new Set(), seenKey = new Set();
     const pool = [];
@@ -156,51 +181,53 @@
       const an = (t.artists || []).map((a) => norm(a.name));
       if (excl.some((e) => an.some((x) => x === e || (' ' + x + ' ').includes(' ' + e + ' ')))) continue;
       if (f.avoidNoisy && NOISY.test(t.name + ' ' + ((t.album && t.album.name) || ''))) continue;
-      if (c.src.startsWith('artist:') && !an.includes(norm(c.src.slice(7)))) continue;
+      // artista pedido/sugerido: só vale se o artista da faixa for mesmo ele (nada de "feat." aleatório)
+      if ((c.src.startsWith('artist:') || c.src.startsWith('seed:')) &&
+          !an.some((x) => nameMatches(x, norm(c.src.slice(c.src.indexOf(':') + 1))))) continue;
 
       if (seenId.has(t.id)) continue;
       const key = norm(t.name) + '|' + (an[0] || '');
       if (seenKey.has(key)) continue;
       seenId.add(t.id); seenKey.add(key);
-      pool.push({ track: t, src: c.src });
+      pool.push({ track: t, src: c.src, rank: c.rank || 0 });
     }
 
-    // baldes por origem; artistas pedidos primeiro
+    // baldes por origem, ordenados pela posição na busca (com um pouco de sorteio)
     const buckets = new Map();
     pool.forEach((p) => {
       if (!buckets.has(p.src)) buckets.set(p.src, []);
-      buckets.get(p.src).push(p.track);
+      buckets.get(p.src).push({ t: p.track, k: p.rank + rng() * SPREAD });
     });
+    for (const [k, list] of buckets) buckets.set(k, list.sort((x, y) => x.k - y.k).map((x) => x.t));
     const keys = [...buckets.keys()];
-    const artistKeys = keys.filter((k) => k.startsWith('artist:'));
+    const artistKeys = shuffle(keys.filter((k) => k.startsWith('artist:')), rng);
     const otherKeys = shuffle(keys.filter((k) => !k.startsWith('artist:')), rng);
-    for (const k of keys) buckets.set(k, shuffle(buckets.get(k), rng));
+    // (artistas pedidos: todos primeiro; sugeridos e gêneros: revezando)
 
     const perArtist = new Map();
     const picked = [];
-    const tryPick = (t) => {
+    const tryPick = (t, limit) => {
       const pa = primaryArtist(t);
-      if ((perArtist.get(pa) || 0) >= cap) return false;
+      if ((perArtist.get(pa) || 0) >= limit) return false;
       perArtist.set(pa, (perArtist.get(pa) || 0) + 1);
       picked.push(t);
       return true;
     };
 
+    // 1) artistas pedidos primeiro
+    // (artistas sugeridos pela IA entram junto com os gêneros, no revezamento abaixo)
     for (const k of artistKeys) {
       const list = buckets.get(k);
-      while (list.length && picked.length < size) {
-        const t = list.shift();
-        if (!tryPick(t)) { /* artista já no limite */ }
-      }
+      while (list.length && picked.length < size) tryPick(list.shift(), capExplicit);
     }
+    // 2) sugeridos pela IA e gêneros, revezando entre as origens
     let progress = true;
     while (picked.length < size && progress) {
       progress = false;
       for (const k of otherKeys) {
         const list = buckets.get(k);
         while (list.length) {
-          const t = list.shift();
-          if (tryPick(t)) { progress = true; break; }
+          if (tryPick(list.shift(), cap)) { progress = true; break; }
         }
         if (picked.length >= size) break;
       }

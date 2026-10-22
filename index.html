@@ -42,6 +42,7 @@
       <label for="nlText" class="sr">Pedido em linguagem natural</label>
       <textarea id="nlText" rows="2" maxlength="200" enterkeyhint="go"
         placeholder="Ex.: Rock para correr, anos 2000, sem músicas ao vivo"></textarea>
+      <label class="switch"><input id="curateAI" type="checkbox" checked><span>Curadoria com IA: sugerir artistas do estilo</span></label>
       <button id="btnInterpret" class="primary big">Interpretar pedido</button>
       <p id="nlResult" class="nl-result" hidden></p>
     </section>
@@ -70,6 +71,8 @@
       <h3>Artistas</h3>
       <label for="inArtists">Incluir <span class="muted">(separe por vírgula)</span></label>
       <input id="inArtists" type="text" placeholder="Ex.: Djavan, Jorge Ben Jor" autocapitalize="words">
+      <label for="inSeeds">Sugeridos pela IA <span class="muted">(edite ou apague à vontade)</span></label>
+      <input id="inSeeds" type="text" placeholder="Preenchido quando você interpreta um pedido" autocapitalize="words">
       <label for="exArtists">Evitar</label>
       <input id="exArtists" type="text" placeholder="Ex.: Fulano, Beltrano" autocapitalize="words">
     </section>

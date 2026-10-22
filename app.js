@@ -62,7 +62,7 @@
   function readFilters() {
     return {
       genres: [...state.genres], moods: [...state.moods], decades: [...state.decades],
-      includeArtists: E.parseList($('inArtists').value), excludeArtists: E.parseList($('exArtists').value),
+      includeArtists: E.parseList($('inArtists').value), seedArtists: E.parseList($('inSeeds').value), excludeArtists: E.parseList($('exArtists').value),
       size: parseInt($('size').value, 10), maxPerArtist: parseInt($('maxPerArtist').value, 10),
       market: $('market').value, avoidNoisy: $('avoidNoisy').checked, noExplicit: $('noExplicit').checked,
       isPrivate: $('isPrivate').checked,
@@ -71,6 +71,7 @@
   function writeFilters(f) {
     state.genres = new Set(f.genres || []); state.moods = new Set(f.moods || []); state.decades = new Set(f.decades || []);
     $('inArtists').value = (f.includeArtists || []).join(', ');
+    $('inSeeds').value = (f.seedArtists || []).join(', ');
     $('exArtists').value = (f.excludeArtists || []).join(', ');
     $('size').value = f.size || 30; $('sizeVal').textContent = f.size || 30;
     $('maxPerArtist').value = String(f.maxPerArtist || 2);
@@ -80,7 +81,8 @@
     $('isPrivate').checked = f.isPrivate !== false;
     renderGenres(); renderMoods(); renderDecades();
   }
-  const saveFilters = (f) => { try { localStorage.setItem(FKEY, JSON.stringify(f)); } catch (e) { /* ignore */ } };
+  // os artistas sugeridos valem só para o pedido atual: não são guardados para a próxima vez
+  const saveFilters = (f) => { try { localStorage.setItem(FKEY, JSON.stringify(Object.assign({}, f, { seedArtists: [] }))); } catch (e) { /* ignore */ } };
   const loadFilters = () => { try { return JSON.parse(localStorage.getItem(FKEY)) || {}; } catch (e) { return {}; } };
 
   // ---------- geração ----------
@@ -96,7 +98,7 @@
     await runPool(plan, 3, async (item) => {
       try {
         const r = await S.search(item.q, item.offset, f.market);
-        ((r.tracks && r.tracks.items) || []).forEach((t) => t && cands.push({ track: t, src: item.src }));
+        ((r.tracks && r.tracks.items) || []).forEach((t, i) => t && cands.push({ track: t, src: item.src, rank: item.offset + i }));
       } catch (e) {
         if (e.fatal) throw e;
         failed++;
@@ -109,7 +111,7 @@
   async function generate() {
     banner('');
     const f = readFilters();
-    if (!f.genres.length && !f.moods.length && !f.decades.length && !f.includeArtists.length) {
+    if (!f.genres.length && !f.moods.length && !f.decades.length && !f.includeArtists.length && !f.seedArtists.length) {
       banner('Escolha ao menos um filtro (gênero, vibe, época ou artista).', true);
       return;
     }
@@ -128,7 +130,7 @@
       // Segunda chance: se faltou música, amplia a busca sem palavras de vibe.
       if (res.tracks.length < f.size * 0.8) {
         busy(true, 'Ampliando a busca…', 0.9);
-        const looser = Object.assign({}, f, { moods: [], includeArtists: [] });
+        const looser = Object.assign({}, f, { moods: [], includeArtists: [], seedArtists: [] });
         plan = E.planQueries(looser, Math.random, used);
         total += plan.length;
         failed += await collect(plan, f, cands, tick);
@@ -219,7 +221,7 @@
     const cur = readFilters();
     // pedido novo: zera os filtros de conteúdo; mantém os ajustes que o pedido não mencionou
     const base = {
-      genres: [], moods: [], decades: [], includeArtists: [], excludeArtists: [],
+      genres: [], moods: [], decades: [], includeArtists: [], seedArtists: [], excludeArtists: [],
       size: cur.size, maxPerArtist: cur.maxPerArtist, market: cur.market,
       avoidNoisy: cur.avoidNoisy, noExplicit: cur.noExplicit, isPrivate: cur.isPrivate,
     };
@@ -233,7 +235,7 @@
     const btn = $('btnInterpret');
     btn.disabled = true; btn.textContent = 'Interpretando…';
     try {
-      const r = await NLU.interpret($('nlText').value, { apiUrl: (window.CONFIG && window.CONFIG.API_URL) || '' });
+      const r = await NLU.interpret($('nlText').value, { apiUrl: (window.CONFIG && window.CONFIG.API_URL) || '', curate: $('curateAI').checked });
       if (!r.error) applyInterpreted(r.filters);
       showNl(r);
     } catch (e) {

@@ -36,9 +36,26 @@ test('planQueries: aspas no gênero não quebram a consulta', () => {
   assert.ok(!plan[0].q.includes('";'));
 });
 
-test('planQueries: sem nenhum filtro ainda gera consulta válida', () => {
-  const plan = E.planQueries({ size: 10 }, E.mulberry32(4), new Set());
-  assert.ok(plan.length > 0 && plan[0].q.length > 0);
+test('planQueries: sem filtro nenhum não inventa busca; só vibe usa palavras-chave', () => {
+  assert.strictEqual(E.planQueries({ size: 10 }, E.mulberry32(4), new Set()).length, 0);
+  const plan = E.planQueries({ moods: ['treino'], size: 20 }, E.mulberry32(4), new Set());
+  assert.ok(plan.length > 0 && plan.every((p) => !p.q.includes('genre:')));
+});
+
+test('planQueries: com gênero/época a vibe NÃO entra na busca (evita faixas aleatórias)', () => {
+  const plan = E.planQueries({ genres: ['rock'], moods: ['treino'], decades: ['2000s'], size: 30 }, E.mulberry32(1), new Set());
+  plan.forEach((p) => assert.ok(!/workout|gym|treino|energy|power/.test(p.q), p.q));
+});
+
+test('planQueries: artistas sugeridos pela IA => 1 página cada, com época, sem buscas genéricas', () => {
+  const plan = E.planQueries({ seedArtists: ['Charlie Brown Jr.', 'Skank'], genres: ['rock'], decades: ['2000s'], size: 30 }, E.mulberry32(1), new Set());
+  assert.deepStrictEqual(plan.map((p) => p.src), ['seed:Charlie Brown Jr.', 'seed:Skank']);
+  plan.forEach((p) => { assert.strictEqual(p.offset, 0); assert.ok(p.q.includes('year:2000-2009')); });
+});
+
+test('planQueries: décadas não contíguas viram uma faixa única nas buscas por artista', () => {
+  const plan = E.planQueries({ includeArtists: ['Djavan'], decades: ['80s', '2000s'], size: 20 }, E.mulberry32(1), new Set());
+  assert.ok(plan[0].q.includes('year:1980-2009'));
 });
 
 test('curate: remove duplicadas, ao vivo/remix, explícitas e artistas excluídos', () => {
@@ -76,6 +93,36 @@ test('curate: equilibra gêneros (round-robin)', () => {
   const r = E.curate(c, { size: 20, maxPerArtist: 1 }, E.mulberry32(7));
   const rock = r.tracks.filter((t) => t.id.startsWith('r')).length;
   assert.ok(rock >= 9 && rock <= 11, 'rock=' + rock);
+});
+
+test('curate: artista sugerido pela IA também só vale se for mesmo ele', () => {
+  const c = [
+    { src: 'seed:Skank', track: mk('k1', 'Garota Nacional', 'Skank') },
+    { src: 'seed:Skank', track: mk('k2', 'Parecida', 'Banda Qualquer') },
+  ];
+  const r = E.curate(c, { size: 5, maxPerArtist: 2 }, E.mulberry32(8));
+  assert.deepStrictEqual(r.tracks.map((t) => t.id), ['k1']);
+});
+
+test('curate: "Paralamas do Sucesso" casa com "Os Paralamas do Sucesso"', () => {
+  const c = [{ src: 'seed:Paralamas do Sucesso', track: mk('p1', 'Lanterna dos Afogados', 'Os Paralamas do Sucesso') },
+             { src: 'seed:Paralamas do Sucesso', track: mk('p2', 'Outra', 'Os Paralamas Cover Band') }];
+  const r = E.curate(c, { size: 5, maxPerArtist: 2 }, E.mulberry32(13));
+  assert.deepStrictEqual(r.tracks.map((t) => t.id), ['p1']);
+});
+
+test('curate: resultados melhor posicionados na busca têm preferência', () => {
+  const c = [];
+  for (let i = 0; i < 20; i++) c.push({ src: 'g:rock', rank: i * 5, track: mk('z' + i, 'Faixa ' + i, 'Art' + i) });
+  const r = E.curate(c, { size: 5, maxPerArtist: 1 }, E.mulberry32(11));
+  r.tracks.forEach((t) => assert.ok(+t.id.slice(1) < 8, t.id)); // só das primeiras posições
+});
+
+test('curate: artista pedido pelo usuário pode passar do limite por artista (até 5)', () => {
+  const c = [];
+  for (let i = 0; i < 12; i++) c.push({ src: 'artist:Djavan', track: mk('dj' + i, 'Canção ' + i, 'Djavan') });
+  const r = E.curate(c, { size: 10, maxPerArtist: 2 }, E.mulberry32(12));
+  assert.strictEqual(r.tracks.length, 5);
 });
 
 test('curate: artista pedido só entra se for mesmo o artista (não feat. aleatório)', () => {

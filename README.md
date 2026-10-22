@@ -16,6 +16,7 @@ Fluxo: **texto → interpretador → validação → filtros do app → (engine,
 1. **Regras locais (grátis, sem internet):** entendem gêneros, vibes ("correr" → Treino), épocas ("anos 80 e 90", "anos 60 a 80"), quantidade, "sem ao vivo/remix", "sem palavrão", máx. por artista e playlist pública/privada.
 2. **IA (Gemini, só quando precisa):** pedidos com artistas ou termos que as regras não conhecem ("Djavan dos anos 80", "sertanejo universitário"). A chamada passa pela função da Vercel em `vercel-api/` (guia próprio lá) — a chave não fica no app.
 3. **Validação (`nlu.js › sanitize`):** só campos permitidos, valores válidos e limites seguros (10–100 músicas, até 5 gêneros e 5 artistas por lista, textos sem símbolos perigosos). A resposta da IA nunca muda privacidade nem país.
+   **Curadoria com IA** (caixa marcada por padrão): a IA sugere de 12 a 15 artistas reais do estilo, e o app busca *esses artistas* no Spotify (na época pedida) em vez de buscar só por gênero. Isso evita músicas de artistas aleatórios. Os nomes aparecem em "Sugeridos pela IA" e você pode editar ou apagar. Artistas que o Spotify não encontrar são ignorados.
 4. Os filtros aparecem nos chips/campos, você ajusta o que quiser e toca em **Gerar prévia** — o resto do app não mudou.
 
 Sem `API_URL` no `config.js`, tudo continua funcionando só com as regras locais.

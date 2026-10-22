@@ -18,7 +18,7 @@
   const DECADE_ORDER = ['60s', '70s', '80s', '90s', '2000s', '2010s', '2020s'];
   const MARKETS = ['BR', 'PT', 'US', 'GB', 'MX', 'AR', 'ES', 'DE', 'FR', 'JP'];
   const PER_ARTIST = [1, 2, 3, 5, 10];
-  const LIMITS = { size: [10, 100], genres: 5, artists: 5 };
+  const LIMITS = { size: [10, 100], genres: 5, artists: 5, seeds: 15 };
 
   const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const cleanStr = (s) =>
@@ -38,7 +38,7 @@
     if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
     return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1);
   }
-  const KEYS = ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists', 'size', 'maxPerArtist', 'avoidNoisy', 'noExplicit'];
+  const KEYS = ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists', 'suggestedArtists', 'size', 'maxPerArtist', 'avoidNoisy', 'noExplicit'];
   function ground(raw, text) {
     const t = fold(text), tw = words(text);
     const nums = (t.match(/\d+/g) || []).map(Number);
@@ -65,7 +65,7 @@
     sertaneja: 'sertanejo',
   };
   const GENRE_RE = /^[a-z0-9][a-z0-9 &'\-]{1,29}$/;
-  const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} .'&!$+\-]{0,59}$/u;
+  const NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} .'&!$+\-\/]{0,59}$/u;
 
   function asList(v) { return Array.isArray(v) ? v.slice(0, 20) : typeof v === 'string' ? [v] : []; }
 
@@ -119,7 +119,7 @@
     if (decades.length) f.decades = DECADE_ORDER.filter((k) => decades.includes(k));
 
     // artistas
-    const clean = (list) => {
+    const clean = (list, max) => {
       const out = [];
       asList(list).forEach((a) => {
         if (typeof a !== 'string') return;
@@ -127,7 +127,7 @@
         if (NAME_RE.test(s) && !out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
         else if (s) warnings.push('Artista ignorado: "' + s.slice(0, 30) + '"');
       });
-      return out.slice(0, LIMITS.artists);
+      return out.slice(0, max || LIMITS.artists);
     };
     const inc = clean(raw.includeArtists);
     const exc = clean(raw.excludeArtists);
@@ -135,6 +135,11 @@
     const inc2 = inc.filter((x) => !excLower.includes(x.toLowerCase()));
     if (inc2.length) f.includeArtists = inc2;
     if (exc.length) f.excludeArtists = exc;
+    if (opts.fromAI) { // artistas sugeridos pela IA (curadoria): só da IA, sem repetir, sem os vetados
+      const banned = exc.concat(inc2).map((x) => x.toLowerCase());
+      const seeds = clean(raw.suggestedArtists, LIMITS.seeds).filter((x) => !banned.includes(x.toLowerCase()));
+      if (seeds.length) f.seedArtists = seeds;
+    }
 
     // números
     if (raw.size != null && raw.size !== '') {
@@ -333,6 +338,13 @@
     ['genres', 'moods', 'decades', 'includeArtists', 'excludeArtists'].forEach((k) => { if (ai[k] && ai[k].length) out[k] = ai[k]; });
     // números/booleanos: o que as regras pegaram de forma explícita tem prioridade
     ['size', 'maxPerArtist', 'avoidNoisy', 'noExplicit'].forEach((k) => { if (out[k] === undefined && ai[k] !== undefined) out[k] = ai[k]; });
+    return withSeeds(out, ai);
+  }
+
+  function withSeeds(out, ai) {
+    const banned = (out.excludeArtists || []).concat(out.includeArtists || []).map((x) => x.toLowerCase());
+    const seeds = (ai.seedArtists || []).filter((x) => !banned.includes(x.toLowerCase()));
+    if (seeds.length) out.seedArtists = seeds;
     return out;
   }
 
@@ -343,6 +355,7 @@
     if (f.decades) p.push(f.decades.join(', '));
     if (f.includeArtists) p.push('artistas: ' + f.includeArtists.join(', '));
     if (f.excludeArtists) p.push('evitar: ' + f.excludeArtists.join(', '));
+    if (f.seedArtists) p.push('IA sugeriu ' + f.seedArtists.length + ' artistas');
     if (f.avoidNoisy === true) p.push('sem ao vivo/remix');
     if (f.avoidNoisy === false) p.push('ao vivo permitido');
     if (f.noExplicit) p.push('sem explícitas');
@@ -359,19 +372,25 @@
     if (!clean) return { error: 'Escreva o que você quer ouvir.' };
 
     const local = parseLocal(clean);
-    if (local.complete) return { filters: local.filters, source: 'local', summary: summarize(local.filters), warnings: local.warnings };
+    const curate = !!(opts.curate && opts.apiUrl);
+    if (local.complete && !curate) return { filters: local.filters, source: 'local', summary: summarize(local.filters), warnings: local.warnings };
 
     const missing = local.leftover.length ? 'Não entendi: "' + local.leftover.slice(0, 6).join(' ') + '".' : '';
     if (opts.apiUrl) {
       try {
         const ai = await callAI(opts.apiUrl, clean, opts.fetch, opts.timeoutMs);
-        const merged = merge(local.filters, ai.filters);
+        // regras locais completas: elas mandam; da IA só vêm os artistas sugeridos
+        const merged = local.complete ? withSeeds(Object.assign({}, local.filters), ai.filters) : merge(local.filters, ai.filters);
         if (hasContent(merged)) {
-          return { filters: merged, source: 'ai', summary: summarize(merged), warnings: local.warnings.concat(ai.warnings) };
+          return { filters: merged, source: local.complete && !merged.seedArtists ? 'local' : 'ai', summary: summarize(merged), warnings: local.warnings.concat(ai.warnings) };
         }
         return { error: 'Não consegui transformar esse pedido em filtros. Tente citar um gênero, vibe, época ou artista.' };
       } catch (e) {
         const why = e && e.rate ? 'A IA atingiu o limite de uso agora.' : 'A IA não respondeu agora.';
+        if (local.complete) {
+          return { filters: local.filters, source: 'local', summary: summarize(local.filters),
+            warnings: [why + ' Usei só gênero e época, sem artistas sugeridos.'].concat(local.warnings) };
+        }
         if (hasContent(local.filters)) {
           return { filters: local.filters, source: 'local-partial', summary: summarize(local.filters),
             warnings: [why + ' Apliquei só o que entendi pelas regras. ' + missing].concat(local.warnings) };
