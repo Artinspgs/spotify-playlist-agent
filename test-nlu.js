@@ -14,6 +14,30 @@ test('exemplo do pedido: rock para correr, anos 2000, sem músicas ao vivo', () 
   assert.ok(r.complete);
 });
 
+test('anos soltos: intervalo, lista, ano único, "novos"', () => {
+  assert.deepStrictEqual(N.parseLocal('brasileiro novos 1990 2026').filters.decades, ['90s', '2000s', '2010s', '2020s']);
+  assert.deepStrictEqual(N.parseLocal('rock de 1990 a 2005').filters.decades, ['90s', '2000s']);
+  assert.deepStrictEqual(N.parseLocal('mpb 1980 e 2000').filters.decades, ['80s', '2000s']);
+  assert.deepStrictEqual(N.parseLocal('pop 2005').filters.decades, ['2000s']);
+  const r = N.parseLocal('funk 1990-2010 com 40 músicas').filters;
+  assert.deepStrictEqual(r.decades, ['90s', '2000s', '2010s']); assert.strictEqual(r.size, 40);
+  assert.deepStrictEqual(N.parseLocal('músicas novas de pop').filters.decades, ['2020s']);
+});
+
+test('erro da IA mostra o motivo (HTTP, timeout, rede) — com e sem filtros parciais', async () => {
+  const http = async () => ({ ok: false, status: 502, json: async () => ({ error: 'ai_unavailable', detail: 'timeout' }) });
+  let r = await N.interpret('quero ouvir Djavan', { apiUrl: 'x', fetch: http });            // nada entendido localmente => erro
+  assert.ok(r.error.includes('HTTP 502') && r.error.includes('timeout'));
+  r = await N.interpret('brasileiro novos 1990 2026', { apiUrl: 'x', fetch: http });         // algo entendido => aviso com o motivo
+  assert.ok(!r.error && r.filters.decades.length === 4 && r.warnings[0].includes('HTTP 502'));
+  const net = async () => { throw new TypeError('Failed to fetch'); };
+  r = await N.interpret('quero ouvir Djavan', { apiUrl: 'x', fetch: net });
+  assert.ok(r.error.includes('sem conexão'));
+  const abort = async () => { const e = new Error('x'); e.name = 'AbortError'; throw e; };
+  r = await N.interpret('quero ouvir Djavan', { apiUrl: 'x', fetch: abort });
+  assert.ok(r.error.includes('demorou demais'));
+});
+
 test('décadas: lista, intervalo, formas soltas', () => {
   assert.deepStrictEqual(N.parseLocal('mpb anos 70 e 80').filters.decades, ['70s', '80s']);
   assert.deepStrictEqual(N.parseLocal('jazz anos 60 a 80').filters.decades, ['60s', '70s', '80s']);
@@ -298,7 +322,8 @@ test('função: erro do Gemini vira 502 genérico (sem vazar detalhes); 429 vira
   try {
     global.fetch = async () => ({ ok: false, status: 500, json: async () => ({ error: { message: 'detalhe interno' } }) });
     let res = mockRes(); await h(mk('4.4.4.4'), res);
-    assert.strictEqual(res.code, 502); assert.deepStrictEqual(res.body, { error: 'ai_unavailable' });
+    assert.strictEqual(res.code, 502); assert.strictEqual(res.body.error, 'ai_unavailable');
+    assert.ok(res.body.detail.includes('gemini_500') && !JSON.stringify(res.body).includes('"k"'));
     global.fetch = async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'quota' } }) });
     res = mockRes(); await h(mk('5.5.5.5'), res);
     assert.strictEqual(res.code, 429); assert.deepStrictEqual(res.body, { error: 'ai_quota' });

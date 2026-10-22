@@ -238,6 +238,25 @@
     }
     for (let i = spans.length - 1; i >= 0; i--) t = t.slice(0, spans[i][0]) + ' ' + t.slice(spans[i][1]);
 
+    // anos soltos: "1990 2026", "de 1990 a 2026", "1990-2026", "2005"
+    const yrRe = /(^|[^a-z0-9])(?:de\s+|desde\s+)?(19[6-9]\d|20[0-2]\d)(?:\s*(a|ate|-|e|,)?\s*(19[6-9]\d|20[0-2]\d))?(?![a-z0-9])/g;
+    t = t.replace(yrRe, (all, pre, y1, sep, y2) => {
+      const d1 = toDecade(y1);
+      if (!d1) return all;
+      found.push(d1);
+      if (y2) {
+        const d2 = toDecade(y2);
+        if (d2) {
+          if (sep === 'e' || sep === ',') found.push(d2);
+          else {
+            const i = DECADE_ORDER.indexOf(d1), j = DECADE_ORDER.indexOf(d2);
+            if (i >= 0 && j > i) DECADE_ORDER.slice(i + 1, j + 1).forEach((x) => found.push(x)); else found.push(d2);
+          }
+        }
+      }
+      return pre + ' ';
+    });
+
     // formas soltas: "90s", "80's", "2000s"
     const bare = new RegExp(PRE + "'?(\\d{2}|\\d{4})'?s" + POST, 'g');
     t = t.replace(bare, (all, pre, n) => { const d = toDecade(n); if (d) { found.push(d); return pre + ' '; } return all; });
@@ -276,7 +295,7 @@
     // épocas
     let decs;
     [t, decs] = extractDecades(t);
-    [t, hit] = take(t, 'recentes?|atuais|atual');
+    [t, hit] = take(t, 'recentes?|atuais|atual|nov[oa]s|lancamentos?');
     if (hit) decs.push('2020s');
     if (decs.length) f.decades = decs;
 
@@ -315,16 +334,23 @@
   // =====================================================================
   async function callAI(apiUrl, text, fetchFn, timeoutMs) {
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 12000) : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 30000) : null;
     try {
       const r = await (fetchFn || fetch)(apiUrl, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }), signal: ctrl ? ctrl.signal : undefined,
       });
       if (r.status === 429) { const e = new Error('limite'); e.rate = true; throw e; }
-      if (!r.ok) throw new Error('ia_' + r.status);
+      if (!r.ok) {
+        let d = ''; try { const b = await r.json(); d = b && (b.detail || b.error) || ''; } catch (e) { /* ignore */ }
+        throw new Error('HTTP ' + r.status + (d ? ' - ' + String(d).slice(0, 100) : ''));
+      }
       const j = await r.json();
       return sanitize(j && j.filters, { fromAI: true, text });
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw new Error('demorou demais');
+      if (e instanceof TypeError) throw new Error('sem conexão com a função (rede/CORS/endereço)');
+      throw e;
     } finally { if (timer) clearTimeout(timer); }
   }
 
@@ -387,15 +413,16 @@
         return { error: 'Não consegui transformar esse pedido em filtros. Tente citar um gênero, vibe, época ou artista.' };
       } catch (e) {
         const why = e && e.rate ? 'A IA atingiu o limite de uso agora.' : 'A IA não respondeu agora.';
+        const detail = e && !e.rate && e.message ? ' [Motivo: ' + e.message + ']' : '';
         if (local.complete) {
           return { filters: local.filters, source: 'local', summary: summarize(local.filters),
-            warnings: [why + ' Usei só gênero e época, sem artistas sugeridos.'].concat(local.warnings) };
+            warnings: [why + ' Usei só gênero e época, sem artistas sugeridos.' + detail].concat(local.warnings) };
         }
         if (hasContent(local.filters)) {
           return { filters: local.filters, source: 'local-partial', summary: summarize(local.filters),
-            warnings: [why + ' Apliquei só o que entendi pelas regras. ' + missing].concat(local.warnings) };
+            warnings: [why + ' Apliquei só o que entendi pelas regras. ' + missing + detail].concat(local.warnings) };
         }
-        return { error: why + ' Tente de novo em instantes ou use os filtros abaixo.' };
+        return { error: why + ' Tente de novo em instantes ou use os filtros abaixo.' + detail };
       }
     }
     if (hasContent(local.filters)) {
