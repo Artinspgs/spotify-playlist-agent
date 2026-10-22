@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Playlist Agent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <title>Playlist Agent</title>
+</head>
+<body>
+  <header class="top">
+    <h1>Playlist Agent</h1>
+    <button id="btnLogout" class="ghost small" hidden>Sair</button>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <!-- ===== Tela: login / configuração ===== -->
+  <main id="viewLogin" class="view" hidden>
+    <section class="card hero">
+      <div class="logo" aria-hidden="true">♪</div>
+      <h2>Crie playlists por filtros</h2>
+      <p>Escolha gênero, vibe, época e artistas. O app monta a playlist e salva direto na sua conta do Spotify.</p>
+      <button id="btnLogin" class="primary big">Conectar ao Spotify</button>
+      <p id="setupHint" class="hint" hidden></p>
+    </section>
+  </main>
+
+  <!-- ===== Tela: filtros ===== -->
+  <main id="viewFilters" class="view" hidden>
+    <p id="hello" class="hello"></p>
+
+    <section class="card">
+      <h3>Gêneros</h3>
+      <div id="chipsGenres" class="chips"></div>
+      <div class="row">
+        <input id="customGenre" type="text" placeholder="Outro gênero (ex.: pop rock)" enterkeyhint="done" autocapitalize="none">
+        <button id="btnAddGenre" class="ghost">Adicionar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>Vibe</h3>
+      <div id="chipsMoods" class="chips"></div>
+      <p class="hint">A vibe é aproximada por palavras nos títulos e álbuns (o Spotify não libera mais energia/humor da faixa).</p>
+    </section>
+
+    <section class="card">
+      <h3>Época</h3>
+      <div id="chipsDecades" class="chips"></div>
+    </section>
+
+    <section class="card">
+      <h3>Artistas</h3>
+      <label for="inArtists">Incluir <span class="muted">(separe por vírgula)</span></label>
+      <input id="inArtists" type="text" placeholder="Ex.: Djavan, Jorge Ben Jor" autocapitalize="words">
+      <label for="exArtists">Evitar</label>
+      <input id="exArtists" type="text" placeholder="Ex.: Fulano, Beltrano" autocapitalize="words">
+    </section>
+
+    <section class="card">
+      <h3>Ajustes</h3>
+      <label for="size">Quantidade de músicas: <b id="sizeVal">30</b></label>
+      <input id="size" type="range" min="10" max="100" step="5" value="30">
+
+      <div class="grid2">
+        <div>
+          <label for="maxPerArtist">Máx. por artista</label>
+          <select id="maxPerArtist">
+            <option value="1">1</option><option value="2" selected>2</option>
+            <option value="3">3</option><option value="5">5</option><option value="10">Sem limite</option>
+          </select>
+        </div>
+        <div>
+          <label for="market">País / catálogo</label>
+          <select id="market">
+            <option value="BR" selected>Brasil</option><option value="PT">Portugal</option>
+            <option value="US">EUA</option><option value="GB">Reino Unido</option>
+            <option value="MX">México</option><option value="AR">Argentina</option>
+            <option value="ES">Espanha</option><option value="DE">Alemanha</option>
+            <option value="FR">França</option><option value="JP">Japão</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="switch"><input id="avoidNoisy" type="checkbox" checked><span>Evitar ao vivo, remix e karaokê</span></label>
+      <label class="switch"><input id="noExplicit" type="checkbox"><span>Sem conteúdo explícito</span></label>
+      <label class="switch"><input id="isPrivate" type="checkbox" checked><span>Playlist privada</span></label>
+    </section>
+    <div class="spacer"></div>
+  </main>
+
+  <!-- ===== Tela: prévia ===== -->
+  <main id="viewPreview" class="view" hidden>
+    <section class="card">
+      <label for="plName">Nome da playlist</label>
+      <input id="plName" type="text" maxlength="100">
+      <p id="plStats" class="hint"></p>
+    </section>
+    <ul id="trackList" class="tracks"></ul>
+    <div class="spacer"></div>
+  </main>
+
+  <!-- ===== Tela: sucesso ===== -->
+  <main id="viewDone" class="view" hidden>
+    <section class="card hero">
+      <div class="logo" aria-hidden="true">✓</div>
+      <h2>Playlist criada!</h2>
+      <p id="doneText"></p>
+      <a id="doneLink" class="primary big linkbtn" target="_blank" rel="noopener">Abrir no Spotify</a>
+      <button id="btnAgain" class="ghost big">Criar outra</button>
+    </section>
+  </main>
+
+  <!-- ===== Barras de ação ===== -->
+  <nav id="barFilters" class="bar" hidden>
+    <button id="btnReset" class="ghost">Limpar</button>
+    <button id="btnGenerate" class="primary">Gerar prévia</button>
+  </nav>
+  <nav id="barPreview" class="bar" hidden>
+    <button id="btnBack" class="ghost">Voltar</button>
+    <button id="btnRegen" class="ghost">Outra versão</button>
+    <button id="btnSave" class="primary">Salvar</button>
+  </nav>
+
+  <div id="busy" class="busy" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="busyText">Buscando músicas…</p>
+    <div class="progress"><div id="busyBar"></div></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="engine.js"></script>
+  <script src="spotify.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
